@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.Nocturne" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.Timeless" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:windowBackground">@color/md3_surface_dark</item>
         <item name="android:statusBarColor">@color/md3_surface_dark</item>
         <item name="android:windowLightStatusBar">false</item>

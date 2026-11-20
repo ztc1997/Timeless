@@ -1,4 +1,4 @@
-# 夜曲 · ColorOS 17 时钟 hook 点校准与方案
+# 无时 · ColorOS 17 时钟 hook 点校准与方案
 
 > 基于对四个真机提取 APK 的静态反编译（jadx 1.5.6 / aapt / dexdump），非推测。
 > 目标设备：OPPO / 一加 ColorOS 17（Android 17，API 37）。
@@ -132,7 +132,7 @@ Launcher 侧证据链（已反编译验证）：
 - 加载方式：`SystemUI` 的 `CommonConstants.WIDGETS_PLUGIN_PKG_NAME` 指向该包，`JsonUtils` 用 `createPackageContextCompat(...)` + `getClassLoader().loadClass("com.oplus.keyguard.style.widgets.comm.WidgetCommImpl")` 把它加载进 **SystemUI 进程**；`KeyguardStyleWidgetsPlugin(hostContext, pluginContext)` 只是包装 `KeyguardStyleWidgetsImpl` 的插件入口。
 - 它承担的是锁屏时钟**周围**的小组件/卡片中心（`ClockAndWidgetProtocol` 里是 `setWidgetsVisibility`、`setWidgetsContainerAlpha`、`getWidgetRow` 等），不是时钟本体。
 
-结论：**不需要为夜曲 hook 这个 APK，也不需要勾选为 LSPosed 作用域**。即使将来要控制锁屏小组件显隐，也可以直接在 SystemUI 进程内 hook `KeyguardPlugin` 的 `widgetPlugin` 调用链，不必单独加载这个包。
+结论：**不需要为「无时」hook 这个 APK，也不需要勾选为 LSPosed 作用域**。即使将来要控制锁屏小组件显隐，也可以直接在 SystemUI 进程内 hook `KeyguardPlugin` 的 `widgetPlugin` 调用链，不必单独加载这个包。
 
 ## 3. 与现有工程的对接建议
 
@@ -149,7 +149,7 @@ Launcher 侧证据链（已反编译验证）：
 2. **P1** 锁屏 `RedTextClock.onTimeChanged` + `RedHorizontalSingleClockView.refresh`。
 3. **P1** AOD `DefaultClockView.updateTime` / `DialClockView` 透明化（含恢复）。
 4. **P2** 桌面 `InspirationClocksManager.onTimeTicked` + 子控件遍历。
-5. 每步用 LSPosed 日志 tag `Nocturne` 看"命中"行；真机若某样式未命中，打印时钟 View 的类名与字段再补候选。
+5. 每步用 LSPosed 日志 tag `Timeless` 看"命中"行；真机若某样式未命中，打印时钟 View 的类名与字段再补候选。
 
 ## 5. 尚未静态解决、需真机确认的点
 

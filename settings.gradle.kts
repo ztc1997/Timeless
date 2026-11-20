@@ -22,6 +22,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Nocturne"
+rootProject.name = "Timeless"
 include(":app")
  

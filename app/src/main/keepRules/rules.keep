@@ -8,6 +8,6 @@
 # 入口类名写在 META-INF/xposed/java_init.list 里，框架按类名反射实例化。
 # 入口类就一个，直接保留原名（不混淆），比依靠 adaptresourcefilecontents
 # 改写资源里的类名更稳；体积代价可忽略。
--keep class com.ztc1997.nocturne.hook.NocturneModule {
+-keep class com.ztc1997.timeless.hook.TimelessModule {
     public <init>();
 }

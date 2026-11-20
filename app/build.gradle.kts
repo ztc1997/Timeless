@@ -33,13 +33,13 @@ val signingReady = listOf("storeFile", "storePassword", "keyAlias", "keyPassword
     .all { keystoreValue(it) != null }
 
 android {
-    namespace = "com.ztc1997.nocturne"
+    namespace = "com.ztc1997.timeless"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.ztc1997.nocturne"
+        applicationId = "com.ztc1997.timeless"
         minSdk = 37
         targetSdk = 37
         versionCode = 23

@@ -1,4 +1,4 @@
-# 夜曲 Nocturne —— 现代 Xposed API（libxposed）模块属性
+# 无时 Timeless —— 现代 Xposed API（libxposed）模块属性
 #
 # 位于 META-INF/xposed/module.prop。LSPosed 靠 java_init.list 的存在判定
 # 「这是一个现代 API 模块」，并读取这里的最低/目标 API 版本。

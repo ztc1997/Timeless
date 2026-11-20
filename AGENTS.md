@@ -1,25 +1,25 @@
-# AGENTS.md — 夜曲 Nocturne
+# AGENTS.md — 无时 Timeless
 
 给 AI 助手 / 新协作者的项目速览。改代码前先读完这一页。
 
 ## 项目是什么
 
 ColorOS 17（Android 17）睡眠时段把系统各处时钟替换为占位符 `-` 的
-LSPosed 模块。包名 `com.ztc1997.nocturne`，libxposed API 102，Kotlin。
+LSPosed 模块。包名 `com.ztc1997.timeless`，libxposed API 102，Kotlin。
 真机：一加 PLQ110（早期）与 PJD110（2026-11-19 起，ColorOS 17.0.0.100）；
 两台机器的时钟链路**不完全相同**，见下面第 4 条。
 
 ## 目录结构
 
 ```
-app/src/main/java/com/ztc1997/nocturne/
+app/src/main/java/com/ztc1997/timeless/
   core/      纯逻辑层（不依赖 Xposed API，双进程共用）
     ConfigKeys.kt       remote preferences 键表 + 默认值
     ConfigSnapshot.kt   配置不可变快照
     SleepWindow.kt      睡眠时段判定（含跨午夜）
     GLog.kt             统一日志出口（Sink 由 hook 入口注入）
   hook/      hook 层
-    NocturneModule.kt           入口（META-INF/xposed/java_init.list 注册）
+    TimelessModule.kt           入口（META-INF/xposed/java_init.list 注册）
     ClockMaskFeature.kt         状态栏/锁屏(shared.clocks)/AOD 的替换分派
     ClockTargets.kt             hook 候选表（HookMode: SET_TEXT/RETURN_VALUE/HIDE_VIEWS）
     PersonalityClocksFeature.kt 插件时钟源头拦截（核心，见下）
@@ -53,9 +53,9 @@ adb shell "su -c 'kill -9 $PIDS'"
   该文件用 UTF-8 读（storeFile 含中文路径），口令四项：`storeFile` /
   `storePassword` / `keyAlias` / `keyPassword`。
 - **模块日志在 LSPosed 日志里，logcat 看不到**：
-  `adb shell "su -c 'grep nocturne /data/adb/lspd/log/modules_*.log'"`
+  `adb shell "su -c 'grep timeless /data/adb/lspd/log/modules_*.log'"`
 - 设备 root：KernelSU，shell 有 su 权限
-- 诊断期 hook 进程日志强制 debug 级（`NocturneModule.install()` 里
+- 诊断期 hook 进程日志强制 debug 级（`TimelessModule.install()` 里
   `GLog.level = 3`，配置变更回调同样强制）；问题收口后改回跟随配置
 
 ## 核心 hook 设计（真机验证结论）
@@ -157,7 +157,7 @@ ColorOS 17 时钟渲染分两套，都要拦：
   （「必须改版本号才触发」是早期误记，2026-11-20 已按实测纠正）。
   `onHotReloaded()` **必须重新 `GLog.install`**：新 generation 的静态状态是全新的，
   不注入日志出口就只剩 `android.util.Log` 兜底（LSPosed 日志里什么都看不到，
-  曾误判成「热重载失败」——排查时记得 `adb logcat -s Nocturne`）。
+  曾误判成「热重载失败」——排查时记得 `adb logcat -s Timeless`）。
 - **连续多次 `kill -9` SystemUI 后，LSPosed 会停止注入新进程**
   （日志停在被杀那一刻）。`killall` 无效，只能 `adb reboot`。热重载能省掉这一步。
 - **热重载只卸载钩子，不会取消 `Handler.postDelayed` 的节拍**：旧 generation 的
@@ -197,7 +197,7 @@ ColorOS 17 时钟渲染分两套，都要拦：
   那时只能读到本地文件（首次安装是空的）→ 设置页永远显示默认参数（2026-11-18
   修复）。现在 `ModulePreferences.load()` + 监听刷新，并且：
   - 写远端成功的键镜像一份到本地，冷启动先用它顶，不闪默认值
-  - 框架没连上时的写入记进 `__nocturne_pending`，连接后覆盖式补写远端
+  - 框架没连上时的写入记进 `__timeless_pending`，连接后覆盖式补写远端
     （否则那次保存会被永久丢在本地，远端旧值继续生效）
   - 界面有未保存改动（dirty）时不跟随后台推送，避免冲掉用户刚拨的开关
 
@@ -221,7 +221,7 @@ ColorOS 17 时钟渲染分两套，都要拦：
 
 ## 约定
 
-- 配置跨进程一律走 remote preferences（组 `nocturne_config`），键表只认
+- 配置跨进程一律走 remote preferences（组 `timeless_config`），键表只认
   `ConfigKeys`；hook 回调每帧读 `ConfigSource.snapshot`，不缓存
 - core/ 层禁止 import 任何 `io.github.libxposed.api` 类型
 - 新 hook 目标先进 `ClockTargets` 候选表再实现

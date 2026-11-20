@@ -1,6 +1,6 @@
 <resources>
     <!-- Compose Material 3 的 MD3 主题；Activity 不再使用 ActionBar。 -->
-    <style name="Theme.Nocturne" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.Timeless" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:windowBackground">@color/md3_surface_light</item>
         <item name="android:statusBarColor">@color/md3_surface_light</item>
         <item name="android:windowLightStatusBar">true</item>

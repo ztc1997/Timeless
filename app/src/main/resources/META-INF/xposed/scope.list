@@ -1,4 +1,4 @@
-# 夜曲初期作用域候选（ColorOS 17 / OPPO·一加·realme）
+# 无时初期作用域候选（ColorOS 17 / OPPO·一加·realme）
 # staticScope=false，这里只是给用户的推荐列表，可在 LSPosed 里自行增删。
 
 # 系统 UI：状态栏时钟、锁屏时钟、AOD 通常都在 com.android.systemui 进程内。

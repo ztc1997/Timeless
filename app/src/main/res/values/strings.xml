@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Nocturne</string>
+    <string name="app_name">Timeless</string>
     <string name="app_description">Masks the system clock during sleep hours, so you can rest without watching the time.</string>
 
     <!-- Home card -->
@@ -13,7 +13,7 @@
     <string name="section_manual_override">Manual override</string>
 
     <!-- Trigger settings -->
-    <string name="setting_enabled">Enable Nocturne (master switch)</string>
+    <string name="setting_enabled">Enable Timeless (master switch)</string>
     <string name="setting_schedule">Fixed-time masking</string>
     <string name="time_start">Start time</string>
     <string name="time_end">End time</string>
@@ -24,7 +24,7 @@
     <!-- System schedule display -->
     <string name="time_from_system">Automatic (learned by the system)</string>
     <string name="follow_system_fetching">Reading the sleep schedule from the system…</string>
-    <string name="follow_system_waiting">System schedule not available yet. It appears once the system clock process has run with Nocturne enabled.</string>
+    <string name="follow_system_waiting">System schedule not available yet. It appears once the system clock process has run with Timeless enabled.</string>
 
     <!-- Manual override options -->
     <string name="override_auto">Automatic (schedule / DND)</string>

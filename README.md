@@ -1,6 +1,8 @@
-# 夜曲 Nocturne
+# 无时 Timeless
 
 睡眠时段屏蔽系统时间显示。夜间醒来不看时间，避免"还有多久天亮"的焦虑计算，改善睡眠质量。
+
+> 名字取自「无时」——夜里没有时间。英文 Timeless 既是「超越时间」，也读作 time-less（没有时间）。
 
 ## 技术路线
 
@@ -26,9 +28,9 @@
 app/src/main/
 ├── resources/META-INF/xposed/     # 模块声明（API 102，非 legacy）
 │   ├── module.prop                # min/target=102 / exceptionMode=protective / autoHotReload
-│   ├── java_init.list             # 入口：NocturneModule
+│   ├── java_init.list             # 入口：TimelessModule
 │   └── scope.list                 # 作用域候选（SystemUI / 启动器 / ColorfulEngine）
-├── java/com/ztc1997/nocturne/
+├── java/com/ztc1997/timeless/
 │   ├── core/                      # 两进程共用，不引用 Xposed API
 │   │   ├── ConfigKeys.kt / ConfigSnapshot.kt
 │   │   ├── SleepWindow.kt         # 时段判定（纯逻辑，可单测）
@@ -36,7 +38,7 @@ app/src/main/
 │   │   ├── GLog.kt                # 日志出口（函数式注入）
 │   │   └── Placeholder.kt         # [LEGACY] 旧星月占位，仅回退保留
 │   ├── hook/                      # 仅目标进程，可引用 API
-│   │   ├── NocturneModule.kt      # 入口与生命周期、进程级安装门闩
+│   │   ├── TimelessModule.kt      # 入口与生命周期、进程级安装门闩
 │   │   ├── ConfigSource.kt        # 目标进程读取 remote preferences
 │   │   ├── MaskDecision.kt        # 屏蔽判定唯一装配点
 │   │   ├── ClockMaskFeature.kt    # 状态栏 / 锁屏时钟
@@ -49,7 +51,7 @@ app/src/main/
 │   │   ├── HostClockHider.kt            # 引擎钩子补装与自检
 │   │   └── StarMoon*.kt / EngineClockPainter.kt  # [LEGACY] 星月自绘回退
 │   └── appconfig/                 # 模块 App 进程，不引用 API
-│       ├── NocturneApp.kt / FrameworkBridge.kt
+│       ├── TimelessApp.kt / FrameworkBridge.kt
 │       ├── ModulePreferences.kt   # 配置写入（远端优先，本地兜底）
 │       └── MainActivity.kt        # Compose 设置页
 └── res/                           # 模块名与设置页资源
@@ -66,7 +68,7 @@ app/src/main/
 2. 安装 APK，在 LSPosed 中启用模块。
 3. **勾选作用域**：`com.android.systemui`、设备上实际的启动器包（本机为 `com.android.launcher`），使用景深/引擎壁纸时钟的主题还需勾选 `com.heytap.colorfulengine`。
 4. 调试期覆盖安装（`install -r`）即可触发热重载，无需改 `versionCode`。
-5. 打开"夜曲"App 配置时段与联动开关。
+5. 打开"无时"App 配置时段与联动开关。
 
 > 未连接框架时，App 会把配置暂存在本地；首次在 LSPosed 勾选后自动迁移到远端。
 
@@ -98,4 +100,4 @@ app/src/main/
 ./gradlew assembleRelease   # R8 full 冒烟：设置页打开、开关保存
 ```
 
-先查单测，再看 LSPosed 日志（tag `Nocturne`）确认每个进程"首帧配置 / 挂钩成功"只出现一次；热重载后不应再出现旧的周期性自检日志。
+先查单测，再看 LSPosed 日志（tag `Timeless`）确认每个进程"首帧配置 / 挂钩成功"只出现一次；热重载后不应再出现旧的周期性自检日志。

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">夜曲</string>
+    <string name="app_name">无时</string>
     <string name="app_description">睡眠时段屏蔽系统时间显示，醒来不看时间，睡得更安稳。</string>
 
     <!-- 首页卡片 -->
@@ -13,7 +13,7 @@
     <string name="section_manual_override">手动覆盖</string>
 
     <!-- 触发策略设置 -->
-    <string name="setting_enabled">启用夜曲（总开关）</string>
+    <string name="setting_enabled">启用无时（总开关）</string>
     <string name="setting_schedule">固定时段屏蔽</string>
     <string name="time_start">开始时间</string>
     <string name="time_end">结束时间</string>
