@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -468,11 +469,14 @@ private fun HeroCard(backendRes: Int) {
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // 横幅图标：消融 8。40dp 才看得出右缘的碎散；24dp 时缺口会糊掉。
             Icon(
                 painter = painterResource(R.drawable.ic_placeholder_fake_time),
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.padding(end = 12.dp),
+                modifier = Modifier
+                    .padding(end = 14.dp)
+                    .size(40.dp),
             )
             Column {
                 Text(
