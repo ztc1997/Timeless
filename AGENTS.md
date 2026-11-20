@@ -176,6 +176,13 @@ ColorOS 17 时钟渲染分两套，都要拦：
   现在失败会打一次「取不到数字，本块将空白」告警，看到这条说明该类布局与预期的
   字段不符，要先补字段而不是继续调星月形状。
 
+- **混淆符号缺失必须留 warn，不能裸 `return 0`**：`ImageElementView` 的字段 `e`、
+  `variUIEngineProguard.c7.j#k(String)`、`ClockFrameRender#K` 都是混淆名，宿主换版
+  改名后钩子就**静默不装** —— 画面照旧真实时间、日志干净，只能靠肉眼发现。四处失败
+  分支已补「缺少 xxx（混淆改名？）」告警（2026-11-20）；排查「某个时钟没替换」先
+  grep 这几条。另：`HostClockHider.install()` 已按进程名收口到 SystemUI，
+  launcher / colorfulengine 不再重复挂引擎钩子（只留各自的 personality / 壁纸链路）。
+
 - **切勿 hook `ClassLoader.loadClass`** 做"类加载看门狗"：在 loadClass 回调里再
   `xposed.hook()` 会触发框架类加载重入，真机实测直接把 LSPosed 打进安全模式
 - 桌面时钟不要用"遍历 View 树写文本"的钩子（已删除 installDesktop）——与源头
