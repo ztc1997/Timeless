@@ -94,7 +94,12 @@ class EngineClockInjector(
      * 与绘制读到的是同一个假值，宽度、字形、颜色全由主题自己算，口径天然一致。
      */
     private fun hookVariablesByName(loader: ClassLoader): Int {
-        val cls = Reflect.loadClass(VARIABLE_MANAGER, loader) ?: return 0
+        val cls = Reflect.loadClass(VARIABLE_MANAGER, loader)
+        if (cls == null) {
+            // 混淆类名换版就到这里，别静默——下一步会尝试从活 TimeView 反查兜底。
+            GLog.w("引擎时间变量：找不到 $VARIABLE_MANAGER（混淆改名？），等待动态解析兜底")
+            return 0
+        }
         return hookTimeVariables(cls)
     }
 
@@ -107,7 +112,10 @@ class EngineClockInjector(
             it.parameterTypes.size == 1 &&
                 it.parameterTypes[0] == String::class.java &&
                 it.returnType == String::class.java
-        } ?: return 0
+        } ?: run {
+            GLog.w("引擎时间变量：${cls.name} 缺少 k(String):String（混淆改名？）")
+            return 0
+        }
         return runCatching {
             bag.add(
                 xposed.hook(m)
@@ -159,11 +167,21 @@ class EngineClockInjector(
      * 两位数字刚好满足 `draw()` 里 `charAt(0)/charAt(1)` 的假设。
      */
     private fun hookZplusTimeText(loader: ClassLoader): Int {
-        val cls = Reflect.loadClass("com.zplus.engine.lk_view.TimeView", loader) ?: return 0
+        val cls = Reflect.loadClass("com.zplus.engine.lk_view.TimeView", loader)
+        if (cls == null) {
+            GLog.w("引擎时钟：找不到 com.zplus.engine.lk_view.TimeView，跳过")
+            return 0
+        }
         var n = 0
         for (name in arrayOf("getHourText", "getMinuteText")) {
             if (!hooked.add("${cls.name}#$name")) continue
-            val m = runCatching { cls.getDeclaredMethod(name) }.getOrNull() ?: continue
+            // 取不到方法时要留痕：这两个 getter 名是可读的，换版后若被改名，
+            // 静默 continue 会让「整串时间没被替换」无从定位（排查成本极高）。
+            val m = runCatching { cls.getDeclaredMethod(name) }.getOrNull()
+            if (m == null) {
+                GLog.w("引擎时钟缺少 ${cls.simpleName}#$name（换版改名？），此入口跳过")
+                continue
+            }
             runCatching {
                 bag.add(
                     xposed.hook(m)
@@ -190,7 +208,11 @@ class EngineClockInjector(
      * `drawText`。proceed 之后就地改字段：不改绘制、不改 paint，字距行高全由宿主算。
      */
     private fun hookEgTimeText(loader: ClassLoader): Int {
-        val cls = Reflect.loadClass("com.oplus.egview.widget.TimeView", loader) ?: return 0
+        val cls = Reflect.loadClass("com.oplus.egview.widget.TimeView", loader)
+        if (cls == null) {
+            GLog.w("AOD 时钟：找不到 com.oplus.egview.widget.TimeView，跳过")
+            return 0
+        }
         if (!hooked.add("${cls.name}#calcTimeNumber")) return 0
         val field = Reflect.findField(cls, "mTextLines") ?: run {
             GLog.w("AOD 时钟缺少 mTextLines 字段，跳过假时间注入")
@@ -250,11 +272,25 @@ class EngineClockInjector(
      * （日期、装饰）一律原样放行。
      */
     private fun hookImageElement(loader: ClassLoader): Int {
-        val cls = Reflect.loadClass("com.zplus.engine.lk_view.ImageElementView", loader) ?: return 0
-        val field = Reflect.findField(cls, "e") ?: return 0
+        val cls = Reflect.loadClass("com.zplus.engine.lk_view.ImageElementView", loader)
+        if (cls == null) {
+            GLog.w("逐位图片时钟：找不到 ImageElementView，跳过")
+            return 0
+        }
+        // 字段名 `e` 是混淆名（就是当前图片名 time_2.png）。换版后被改名时这里
+        // 曾是完全静默的失败点 —— 画面不动、日志干净，只能靠肉眼发现。
+        val field = Reflect.findField(cls, "e")
+        if (field == null) {
+            GLog.w("逐位图片时钟：ImageElementView 缺少图片名字段 e（混淆改名？），跳过")
+            return 0
+        }
         val draw = runCatching {
             cls.getDeclaredMethod("draw", android.graphics.Canvas::class.java)
-        }.getOrNull() ?: return 0
+        }.getOrNull()
+        if (draw == null) {
+            GLog.w("逐位图片时钟：ImageElementView 缺少 draw(Canvas)，跳过")
+            return 0
+        }
         if (!hooked.add("${cls.name}#draw")) return 0
         return runCatching {
             bag.add(
