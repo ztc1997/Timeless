@@ -22,7 +22,7 @@
             <gradient
                 android:type="radial"
                 android:centerX="54" android:centerY="52"
-                android:gradientRadius="38">
+                android:gradientRadius="33">
                 <item android:offset="0" android:color="#3AF6C87C" />
                 <item android:offset="0.55" android:color="#1CF6C87C" />
                 <item android:offset="1" android:color="#00F6C87C" />
