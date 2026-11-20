@@ -32,7 +32,7 @@
     <string name="override_off">强制显示</string>
 
     <!-- 说明与提示 -->
-    <string name="info_placeholder">占位符：不可能的假时间（如 77:77，四位同数字，每分钟变化）</string>
+    <string name="info_placeholder">占位符：不可能的假时间（如 88:88，四位同数字，每分钟变化）</string>
     <string name="apply_failed">设置未生效（配置后端未就绪）</string>
 
     <!-- 操作 -->

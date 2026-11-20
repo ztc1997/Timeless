@@ -124,7 +124,7 @@ ColorOS 17 时钟渲染分两套，都要拦：
      `StarMoonGlyph.inkFraction` 先量出原图墨迹包围盒，再按 `BITMAP_SHRINK` 收
      一点余量，月牙宽度用 `MOON_WIDTH_BITMAP`（文本链路仍用 `MOON_WIDTH_TEXT`）。
 
-5. **假时间占位 `77:77`**（2026-11-20 定稿，取代星月自绘；方案推导见
+5. **假时间占位 `88:88`**（2026-11-20 定稿，取代星月自绘；方案推导见
    `FAKE_CLOCK_PLAN.md`）：不再自绘，而是把「现在几点」这个**答案**换掉，让宿主
    用**主题自己的字形/位图/颜色**重新排版。四条链路各有一个源头：
    - SystemUI 状态栏：`Clock#getSmallTime` 返回值
@@ -225,7 +225,7 @@ ColorOS 17 时钟渲染分两套，都要拦：
   `ConfigKeys`；hook 回调每帧读 `ConfigSource.snapshot`，不缓存
 - core/ 层禁止 import 任何 `io.github.libxposed.api` 类型
 - 新 hook 目标先进 `ClockTargets` 候选表再实现
-- 占位符 = 假时间 `77:77`（`core/FakeTime.kt`）：四位同值，取值 6..9，按分钟
+- 占位符 = 假时间 `88:88`（`core/FakeTime.kt`）：四位同值，取值 6..9，按分钟
   确定性生成且相邻分钟必变；`digit(seed, original)` 刻意忽略原数字，所以整串
   替换与逐位写入天然对齐，也无法反推真实时间。宿主用自己的字形/位图/颜色
   重新排版，不再自绘。`core/Placeholder.kt`、`hook/StarMoonSpan.kt`、

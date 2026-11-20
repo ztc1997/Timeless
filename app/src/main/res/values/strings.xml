@@ -32,7 +32,7 @@
     <string name="override_off">Force show</string>
 
     <!-- Hints and messages -->
-    <string name="info_placeholder">Placeholder: impossible fake time (e.g. 77:77, four identical digits, changes every minute)</string>
+    <string name="info_placeholder">Placeholder: impossible fake time (e.g. 88:88, four identical digits, changes every minute)</string>
     <string name="apply_failed">Could not apply setting (config backend not ready)</string>
 
     <!-- Actions -->
