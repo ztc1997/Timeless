@@ -55,6 +55,17 @@ class HostClockHider(
     fun install(): Int {
         var hooked = 0
         GLog.i("宿主时钟：只做引擎绘制接管（整块 alpha/visibility 隐藏路线已移除）")
+        // 引擎钩子只在 SystemUI（锁屏 + AOD）里需要：桌面走 personality 插件的
+        // 数字位图，壁纸进程走 ColorfulEngine 的 ClockFrameRender，在那边挂既多余、
+        // 又会与本地链路互相打架（见 ensureEngineHook 的说明）。
+        // 2026-11-20 修：这条守卫原先只写在 ensureEngineHook 里，install() 的直挂
+        // 路径绕过了它 —— 真机日志里 launcher / colorfulengine 也挂上了 TimeView
+        // 系列钩子。现在收口到 isSystemUiProcess()，两条路径共用同一判定。
+        if (!isSystemUiProcess()) {
+            engineHooked = true
+            GLog.i("非 SystemUI 进程（${processName()}），跳过引擎时钟钩子")
+            return 0
+        }
         // UIEngine 锁屏时钟：走的不是文本也不是 View 属性，只能拦 draw。
         val engineLoader = runCatching {
             DndState.currentAppContext()?.createPackageContext(
@@ -184,8 +195,21 @@ class HostClockHider(
     private var engineHooked = false
     private var engineDiagLogged = false
 
-    /** 已经报过「取不到数字」的引擎时钟类，避免每帧刷日志。 */
-    private val failLogged = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    /** 当前进程名；取不到时为 "unknown"（只用于日志）。 */
+    private fun processName(): String =
+        runCatching { android.app.Application.getProcessName() }.getOrNull() ?: "unknown"
+
+    /**
+     * 是否 SystemUI 进程。
+     *
+     * 取不到进程名时按「是」处理：引擎类在该进程不存在时 install 自己会返回 0，
+     * 代价只是几条 warn；而误判成「不是」会让锁屏/AOD 整条链路失效，且没有任何症状
+     * 提示。所以判定只在**明确读到了非 systemui 进程名**时才否定。
+     */
+    private fun isSystemUiProcess(): Boolean {
+        val proc = runCatching { android.app.Application.getProcessName() }.getOrNull()
+        return proc == null || proc.contains("systemui")
+    }
 
     /** `ActivityThread.getSystemContext()`：还没有 Application 时的兜底 Context。 */
     private fun systemContext(): Context? = runCatching {
@@ -208,11 +232,10 @@ class HostClockHider(
     private fun ensureEngineHook(ctx: Context?) {
         if (engineHooked) return
         // 引擎时钟只在 SystemUI（锁屏 + AOD）里拦。桌面那套走 personality 插件，
-        // 已经有星月占位；这里如果一并拦掉，桌面时钟会变成空白而不是星月。
-        val proc = runCatching { android.app.Application.getProcessName() }.getOrNull()
-        if (proc != null && !proc.contains("systemui")) {
+        // 已经有假数字；这里如果一并拦掉，桌面时钟会变成空白而不是假时间。
+        if (!isSystemUiProcess()) {
             engineHooked = true
-            if (GLog.isDebug) GLog.d("非 SystemUI 进程（$proc），跳过引擎时钟钩子")
+            GLog.i("非 SystemUI 进程（${processName()}），跳过引擎时钟钩子")
             return
         }
         val real = ctx ?: systemContext()
