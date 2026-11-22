@@ -145,15 +145,25 @@ ColorOS 17 时钟渲染分两套，都要拦：
    `draw()` 取值就读到同一个假值，宽度与观感天然一致。类名是混淆的，换版对不上
    时还有一条兜底：从活的 `TimeView` 反查 `mEngineUtil.c` 再挂（只尝试一次）。
 
-7. **启动流体云提醒**（2026-11-22）：屏蔽从无到有时，SystemUI 进程直接发一条
-   Live Updates（promoted ongoing）通知，标题「无时已启动」，副标题按原因显示
-   「强制屏蔽 / 免打扰模式 / 睡眠时段」，附「临时禁用」动作。实现见
-   `hook/FluidCloudNotifier.kt` + `appconfig/TempDisableReceiver.kt`：
-   - **必须从 SystemUI 进程发**：流体云是 ColorOS 对 Android 16 promoted ongoing
-     通知的呈现，需要 `POST_PROMOTED_NOTIFICATIONS` 与通知渠道；模块 App 是普通
-     三方应用，没权限时只会发成普通通知。SystemUI 侧额外补
-     `oplusLiveAlertOptions` extra（与 SystemUI 自己的 `LiveAlertChipModel` 同款），
-     真机确认会以流体云胶囊形式出现在锁屏/通知栏。
+7. **启动流体云提醒**（2026-11-22）：屏蔽从无到有时，SystemUI 进程发一条通知，
+   标题「无时已启动」，副标题按原因显示「强制屏蔽 / 免打扰模式 / 睡眠时段」，
+   附「临时禁用」动作。实现见 `hook/FluidCloudNotifier.kt` +
+   `hook/FluidCloudFilter.kt` + `appconfig/TempDisableReceiver.kt`：
+   - **必须从 SystemUI 进程发**：真正的 ColorOS 流体云（挖孔旁黑色胶囊、锁屏
+     黑色卡片、AOD 常驻）由 SystemUI 内的 Seedling 插件渲染，模块 App 是普通
+     三方应用，发出来只会是普通通知。
+   - **关键：光发通知不够，必须过 filter**。SystemUI 的
+     `OplusLiveAlertFilters.filterEntry()` AND 多个子 filter，插件的
+     `onLiveNotificationPost` 只认白名单 app/服务，我们的通知拿 flag=0 会被
+     降级成普通通知。手动往 extras 塞 `oplusLiveAlertOptions` 没用 ——
+     `OplusLiveAlertNotificationsRepository.entryToLiveAlert()` 会覆盖它。
+     `FluidCloudFilter` hook 总 filter，只把自家通知（pkg=com.android.systemui
+     && id=0x54494D45）的返回值改成 7（状态栏/锁屏/AOD 全 host），
+     其余通知原样放行；options 交给系统自己生成。
+   - 曾误以为 Live Updates（promoted ongoing）就是流体云：实测那只是普通通知，
+     真正差异全在上面这个 filter 上。渠道用 `live_alert`（与系统
+     `LiveAlertChipModel` 一致），`setShortCriticalText` 是胶囊上的短文案
+     （「无时·时段」，超过 7 字会被截断）。
    - 触发点是 `ClockMaskFeature` 每次判定后的 `MaskDecision.evaluate()`：
      null → 原因时发帖，原因 → null 时撤销，原因变化才更新同一条通知。
      非 SystemUI 进程不传 sink，不重复发。热重载时显式 dismiss。

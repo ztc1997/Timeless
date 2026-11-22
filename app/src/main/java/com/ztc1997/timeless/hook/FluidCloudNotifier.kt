@@ -7,7 +7,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Icon
-import android.os.Bundle
 import com.ztc1997.timeless.BuildConfig
 import com.ztc1997.timeless.core.ConfigSnapshot
 import com.ztc1997.timeless.core.FluidCloudContract
@@ -18,14 +17,13 @@ import com.ztc1997.timeless.core.SleepWindow
 /**
  * 流体云提醒：只在 SystemUI 进程安装使用。
  *
- * 为什么从 SystemUI 发而不是模块 App：流体云是 Android 16 Live Updates
- * （promoted ongoing notification）在 ColorOS 上的呈现，发帖方需要
- * POST_PROMOTED_NOTIFICATIONS / 通知渠道权限；模块 App 只是普通三方应用，
- * 用户没授权时发出来的是普通通知、不会变成流体云。SystemUI 进程天然有这些权限。
+ * 为什么从 SystemUI 发：真正的 ColorOS 流体云（挖孔周围的黑色胶囊、锁屏/AOD 常驻）
+ * 由 SystemUI 内的 Seedling 插件渲染，帖子来自 SystemUI 才走得了这条原生链路。
+ * 模块 App 只是普通三方应用，发出来只会是普通通知。
  *
- * 通知本身走标准 Live Updates API（setRequestPromotedOngoing），再补一个
- * ColorOS 的 `oplusLiveAlertOptions` extra —— 与 SystemUI 自己构造胶囊时
- * （LiveAlertChipModel#setLiverAlertNotificationOption）一致，确保路由到流体云。
+ * 光发通知还不够：SystemUI 的 OplusLiveAlertFilters 会拦截通知，插件 filter 不认识
+ * 我们就会降级成普通通知。FluidCloudFilter 负责把自家通知的 flag 改成 7，
+ * 剩下的 options 由系统 entryToLiveAlert 自己生成（手动塞 extra 会被覆盖）。
  *
  * 状态机刻意只认「屏蔽原因变化」：
  * - null → 有原因：发帖
@@ -35,13 +33,8 @@ import com.ztc1997.timeless.core.SleepWindow
  */
 object FluidCloudNotifier {
 
-    private const val NOTIFICATION_ID = 0x54494D45 // TIM E，固定 ID 便于覆盖/撤销
-    private const val CHANNEL_ID = "timeless_fluid_cloud"
-
-    /** 与 SystemUI 的 LiveAlertChipModel 同款字段；Gson 序列化顺序即此顺序。 */
-    private const val LIVE_ALERT_OPTIONS =
-        "{\"isMilestone\":true,\"dataSourcePkgName\":\"com.android.systemui\"," +
-            "\"remindType\":0,\"showHostMap\":[8],\"lockScreenShowHostMap\":[8]}"
+    internal const val NOTIFICATION_ID = 0x54494D45 // TIM E，固定 ID 便于覆盖/撤销
+    private const val CHANNEL_ID = "live_alert"
 
     private val lock = Any()
     private var active = false
@@ -109,10 +102,6 @@ object FluidCloudNotifier {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        val extras = Bundle().apply {
-            putString("oplusLiveAlertOptions", LIVE_ALERT_OPTIONS)
-        }
-
         val notification = Notification.Builder(ctx, CHANNEL_ID)
             .setSmallIcon(Icon.createWithResource(ctx, android.R.drawable.ic_menu_recent_history))
             .setContentTitle(title)
@@ -123,7 +112,6 @@ object FluidCloudNotifier {
             .setShowWhen(false)
             .setCategory(Notification.CATEGORY_STATUS)
             .setRequestPromotedOngoing(true)
-            .addExtras(extras)
             .addAction(
                 Notification.Action.Builder(null, "临时禁用", actionPending).build(),
             )

@@ -142,10 +142,16 @@ class TimelessModule : XposedModule() {
             }
         }
 
-        // 流体云只由 SystemUI 进程发：那里有 promoted ongoing 所需的权限；
+        // 流体云只由 SystemUI 进程发：那里有发流体云（Seedling 胶囊）的权限；
         // launcher / colorfulengine 里同样的一次判定不需要（也不该）弹通知。
         val fluidCloudSink: ((MaskReason?) -> Unit)? = if (isSystemUiProcess) {
-            { reason -> FluidCloudNotifier.onDecision(reason) { configSource.snapshot } }
+            // 先让系统把自家通知识别为流体云（否则只会是普通通知），
+            // 再在屏蔽状态跳变时发帖。
+            FluidCloudFilter(xposed, bag).install(classLoader)
+            val sink: (MaskReason?) -> Unit = { reason ->
+                FluidCloudNotifier.onDecision(reason) { configSource.snapshot }
+            }
+            sink
         } else {
             null
         }
