@@ -36,7 +36,10 @@ object FluidCloudNotifier {
     internal const val NOTIFICATION_ID = 0x54494D45 // TIM E，固定 ID 便于覆盖/撤销
     // 不用系统流体云的 live_alert 渠道：那条渠道是 HIGH + 系统默认提示音，
     // 而系统渠道属于 com.android.systemui，改它的音频属性会连系统流体云一起静音。
-    private const val CHANNEL_ID = "timeless_live_alert"
+    // importance 从 LOW 改成 DEFAULT 后必须换 ID：Android 不允许修改已存在渠道的
+    // importance，同 ID 重建无效（实测 naturalImportance 仍为 2）。v2 让系统真正
+    // 新建 DEFAULT 渠道，通知才会被提升为 PROMOTED_ONGOING 并进入 AOD 渲染通道。
+    private const val CHANNEL_ID = "timeless_live_alert_v2"
 
     private val lock = Any()
     private var active = false
@@ -125,9 +128,12 @@ object FluidCloudNotifier {
         )
 
         val notification = Notification.Builder(ctx, CHANNEL_ID)
-            // 主题流体云插件按 immersiveCardType 决定要生成哪些宿主卡片：没有它时
-            // 只有状态栏胶囊 + 锁屏大卡片，AOD 的卡片列表是空的。
-            .addExtras(Bundle().apply { putInt("immersiveCardType", 2) })
+            .addExtras(Bundle().apply {
+                putInt("immersiveCardType", 2)
+                // 给 system_server 的 FluidCloudPromoter 精确识别自家通知用，
+                // 避免误伤系统其它流体云。
+                putBoolean(FluidCloudPromoter.EXTRA_TIMEL_FLUID, true)
+            })
             .setSmallIcon(Icon.createWithResource(ctx, android.R.drawable.ic_menu_recent_history))
             .setContentTitle(title)
             .setContentText(detail)
@@ -156,10 +162,14 @@ object FluidCloudNotifier {
 
     private fun ensureChannel(nm: NotificationManager) {
         // 渠道属性只在创建/显式更新时生效，所以每次发帖都覆盖写一次（幂等）。
+        // importance 必须是 DEFAULT(3) 而不是 LOW(2)：对照 com.lele.llpower 实测
+        // requestPromotedOngoing=true 在 LOW 渠道下不会把通知提升成 PROMOTED_ONGOING，
+        // 只有 DEFAULT 及以上系统才认，进而才走 Seedling 的 AOD 渲染通道。
+        // 静音不靠降 importance，靠下面的 setSound(null)，DEFAULT 一样无声。
         val channel = NotificationChannel(
             CHANNEL_ID,
             "无时提醒",
-            NotificationManager.IMPORTANCE_LOW,
+            NotificationManager.IMPORTANCE_DEFAULT,
         ).apply {
             setSound(null, null)
             enableVibration(false)

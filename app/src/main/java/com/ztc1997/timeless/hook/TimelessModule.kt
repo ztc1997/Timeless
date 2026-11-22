@@ -41,19 +41,27 @@ class TimelessModule : XposedModule() {
         get() = runCatching { Process.myProcessName() == "com.android.systemui" }
             .getOrDefault(false)
 
+    /** system_server 进程名（fluid cloud promoted 放行钩子装在这里）。 */
+    private val isSystemServerProcess: Boolean
+        get() = runCatching { Process.myProcessName() == "system_server" }
+            .getOrDefault(false)
+
     /** 进程级安装门闩：同一进程可能对多个 scope 包回调 onPackageReady，钩子只装一次。 */
     private val installGate = InstallGate()
+
+    /** system_server 里那一个流体云放行钩子的句柄，热重载时统一卸载。 */
+    private var promoterBag: HookBag? = null
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
         installLogSink()
         GLog.level = ConfigSnapshot.DEFAULT.logLevel
 
         val process = param.processName
-        // system_server 里永远没有目标宿主，误勾作用域时在这里挡掉，
-        // 避免给整个系统进程挂钩。
         if (param.isSystemServer) {
-            GLog.i("system_server 不在作用域，detach")
-            detach()
+            // system_server 里只装一个流体云 promoted 放行钩子（给无时通知补
+            // FLAG_PROMOTED_ONGOING），不装任何时钟钩子。需要 LSPosed 作用域
+            // 勾选「系统框架 / system_server」才会进到这个进程。
+            GLog.i("system_server 载入：仅安装流体云 promoted 放行钩子")
             return
         }
 
@@ -66,6 +74,16 @@ class TimelessModule : XposedModule() {
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
+        if (isSystemServerProcess) {
+            if (!installGate.tryInstall()) {
+                GLog.i("system_server 钩子已安装，跳过")
+                return
+            }
+            val bag = HookBag()
+            FluidCloudPromoter(this, bag).install(param.classLoader)
+            promoterBag = bag
+            return
+        }
         // 作用域由 LSPosed 依 scope.list / 用户勾选过滤，框架不会回调作用域外的包。
         // 但同一进程可能对多个 scope 包各回调一次（真机日志：systemui 内装了 4 遍），
         // 必须用进程级门闩挡住重复 install，否则会重复挂钩、重复注册配置监听，
@@ -79,6 +97,9 @@ class TimelessModule : XposedModule() {
 
     override fun onHotReloading(param: HotReloadingParam): Boolean {
         GLog.i("收到热重载请求，清理自检节拍并允许")
+        // system_server generation 的 promoter 钩子也随旧代码一起卸掉。
+        promoterBag?.unhookAll()
+        promoterBag = null
         // Handler.postDelayed 不在 HookHandle 管理范围内，热重载只卸载钩子不会
         // 取消旧 generation 的 ticker；必须显式停掉，否则旧代码继续改视图。
         hostClockHider?.close()
@@ -103,6 +124,16 @@ class TimelessModule : XposedModule() {
         configSource = null
 
         installGate.reset()
+        if (isSystemServerProcess) {
+            val cl = runCatching { Class.forName("android.app.ActivityThread").classLoader }.getOrNull()
+                ?: javaClass.classLoader
+            if (cl != null) {
+                val bag = HookBag()
+                FluidCloudPromoter(this, bag).install(cl)
+                promoterBag = bag
+            }
+            return
+        }
         val cl = currentAppClassLoader()
         if (cl == null) {
             GLog.e("热重载后拿不到宿主 classLoader，重启宿主即可恢复")
