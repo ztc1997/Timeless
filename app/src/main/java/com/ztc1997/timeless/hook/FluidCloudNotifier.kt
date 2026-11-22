@@ -7,7 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Icon
-import com.ztc1997.timeless.BuildConfig
+import android.os.Bundle
 import com.ztc1997.timeless.core.ConfigSnapshot
 import com.ztc1997.timeless.core.FluidCloudContract
 import com.ztc1997.timeless.core.GLog
@@ -34,7 +34,9 @@ import com.ztc1997.timeless.core.SleepWindow
 object FluidCloudNotifier {
 
     internal const val NOTIFICATION_ID = 0x54494D45 // TIM E，固定 ID 便于覆盖/撤销
-    private const val CHANNEL_ID = "live_alert"
+    // 不用系统流体云的 live_alert 渠道：那条渠道是 HIGH + 系统默认提示音，
+    // 而系统渠道属于 com.android.systemui，改它的音频属性会连系统流体云一起静音。
+    private const val CHANNEL_ID = "timeless_live_alert"
 
     private val lock = Any()
     private var active = false
@@ -48,6 +50,7 @@ object FluidCloudNotifier {
         synchronized(lock) {
             if (reason == null) {
                 if (active) {
+                    GLog.i("流体云撤销：reason 变 null（临时禁用/解除屏蔽）")
                     DndState.currentAppContext()?.let(::cancel)
                     active = false
                     lastReason = null
@@ -77,6 +80,23 @@ object FluidCloudNotifier {
         }
     }
 
+    /**
+     * 按钮「临时禁用」点击后立即撤掉通知。
+     *
+     * 不检查 [active]：那是个跟随时钟刷新回调的状态位，屏幕停在 AOD / 时钟未
+     * 绘制时可能与通知实际存在与否脱节（实测 active=false 但通知仍在）。
+     * 按通知 ID 无条件 cancel 是幂等的，多撤一次没有副作用。
+     */
+    fun cancelNow() {
+        val ctx = DndState.currentAppContext() ?: return
+        cancel(ctx)
+        synchronized(lock) {
+            active = false
+            lastReason = null
+        }
+        GLog.i("流体云已按临时禁用撤销（无条件 cancel）")
+    }
+
     private fun post(ctx: Context, reason: MaskReason, cfg: ConfigSnapshot) {
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         if (nm == null) {
@@ -91,8 +111,10 @@ object FluidCloudNotifier {
         val short = "无时·${reason.shortLabel()}"
 
         val untilSec = tempDisableUntilSec(reason, cfg)
-        val intent = Intent(FluidCloudContract.ACTION_TEMP_DISABLE)
-            .setPackage(BuildConfig.APPLICATION_ID)
+        // 按钮广播在系统进程内闭环：SystemUI 发出、各 hook 进程的 TempDisableLocal
+        // 动态 receiver 接收，不经过会被冻结的模块 App。IMMUTABLE + UPDATE_CURRENT
+        // 保证覆盖旧 Intent 的到期时刻。
+        val intent = Intent(FluidCloudContract.ACTION_TEMP_DISABLE_LOCAL)
             .putExtra(FluidCloudContract.EXTRA_UNTIL_SEC, untilSec)
             .putExtra(FluidCloudContract.EXTRA_REASON, reason.name)
         val actionPending = PendingIntent.getBroadcast(
@@ -103,6 +125,9 @@ object FluidCloudNotifier {
         )
 
         val notification = Notification.Builder(ctx, CHANNEL_ID)
+            // 主题流体云插件按 immersiveCardType 决定要生成哪些宿主卡片：没有它时
+            // 只有状态栏胶囊 + 锁屏大卡片，AOD 的卡片列表是空的。
+            .addExtras(Bundle().apply { putInt("immersiveCardType", 2) })
             .setSmallIcon(Icon.createWithResource(ctx, android.R.drawable.ic_menu_recent_history))
             .setContentTitle(title)
             .setContentText(detail)
@@ -130,16 +155,20 @@ object FluidCloudNotifier {
     }
 
     private fun ensureChannel(nm: NotificationManager) {
-        if (nm.getNotificationChannel(CHANNEL_ID) != null) return
-        runCatching {
-            nm.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_ID,
-                    "无时提醒",
-                    NotificationManager.IMPORTANCE_HIGH,
-                ),
-            )
-        }.onFailure { GLog.w("创建流体云通知渠道失败", it) }
+        // 渠道属性只在创建/显式更新时生效，所以每次发帖都覆盖写一次（幂等）。
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "无时提醒",
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            setSound(null, null)
+            enableVibration(false)
+            enableLights(false)
+            setShowBadge(true)
+            description = "无时启动提醒（静默）"
+        }
+        runCatching { nm.createNotificationChannel(channel) }
+            .onFailure { GLog.w("创建流体云通知渠道失败", it) }
     }
 
     /**

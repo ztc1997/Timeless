@@ -1,5 +1,6 @@
 package com.ztc1997.timeless.hook
 
+import android.content.Context
 import android.os.Process
 import com.ztc1997.timeless.BuildConfig
 import com.ztc1997.timeless.core.ConfigSnapshot
@@ -84,6 +85,8 @@ class TimelessModule : XposedModule() {
         hostClockHider = null
         // 流体云同理：钩子卸掉后不会再有回调来撤销它，先自己收掉。
         FluidCloudNotifier.dismiss()
+        // 本地临时禁用接收器随旧 generation 一起注销，避免与新的一代并存。
+        TempDisableLocal.close()
         return true
     }
 
@@ -138,7 +141,9 @@ class TimelessModule : XposedModule() {
                     pluginOnce.set(false) // 下次回调再试
                 } else {
                     pluginFeature.install(ctx)
+                    registerTempDisableLocal(ctx)
                 }
+
             }
         }
 
@@ -224,6 +229,7 @@ class TimelessModule : XposedModule() {
         // hookedClasses 幂等集合，避免多路触发时对同一 Class 重复挂钩。
         val immediate = DndState.currentAppContext()
         if (immediate != null) {
+            registerTempDisableLocal(immediate)
             if (pluginOnce.compareAndSet(false, true)) {
                 pluginFeature.install(immediate)
             }
@@ -259,6 +265,20 @@ class TimelessModule : XposedModule() {
                     },
             )
         }.onFailure { GLog.w("挂延迟安装钩子失败", it) }
+    }
+
+    /**
+     * 注册「临时禁用」本地接收器（各 hook 进程都要装，判定才能跨进程一致）。
+     * install 内部幂等，多处调用安全。SystemUI 进程额外挂回调：收到广播立即
+     * 撤掉流体云，不必等下一次时钟绘制。
+     */
+    private fun registerTempDisableLocal(ctx: Context) {
+        val onReceived: ((Int) -> Unit)? = if (isSystemUiProcess) {
+            { _ -> FluidCloudNotifier.cancelNow() }
+        } else {
+            null
+        }
+        TempDisableLocal.install(ctx, onReceived)
     }
 
     private fun currentAppClassLoader(): ClassLoader? = runCatching {

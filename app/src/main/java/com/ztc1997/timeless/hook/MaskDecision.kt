@@ -24,7 +24,9 @@ object MaskDecision {
      * @param config 返回最新配置快照的 getter（每次回调都读，勿缓存）
      */
     fun evaluate(config: () -> ConfigSnapshot): MaskReason? {
-        val cfg = config()
+        // 叠加本进程的「临时禁用」状态：按钮广播在各 hook 进程内闭环写入，
+        // 不经过会被冻结的模块 App。进程不落盘，宿主重启后自然失效。
+        val cfg = TempDisableLocal.merge(config())
         return SleepWindow.decide(
             cfg,
             System.currentTimeMillis(),
