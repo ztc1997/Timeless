@@ -150,16 +150,22 @@ ColorOS 17 时钟渲染分两套，都要拦：
    附「临时禁用」动作。实现见 `hook/FluidCloudNotifier.kt` +
    `hook/FluidCloudFilter.kt` + `appconfig/TempDisableReceiver.kt`：
    - **必须从 SystemUI 进程发**：真正的 ColorOS 流体云（挖孔旁黑色胶囊、锁屏
-     黑色卡片、AOD 常驻）由 SystemUI 内的 Seedling 插件渲染，模块 App 是普通
-     三方应用，发出来只会是普通通知。
+     黑色卡片）由 SystemUI 内的 Seedling 插件渲染，模块 App 是普通三方应用，
+     发出来只会是普通通知。
+   - **AOD（熄屏）不显示胶囊，这是系统限制，不是我们的通知有问题**：真机 PLQ110
+     确认 AOD 上只有假时间（及一个小通知图标），系统原生流体云在该模式下同样不渲染胶囊。
+     根因是胶囊容器 flow 要求 `SmoothTransitionController.isPanoramicAodEnable()` 为真
+     （`Settings.Secure.panoramic_aod_enable=1`），普通 AOD 下为 0。实测临时改 setting、
+     hook 胶囊开关 `setAllowToShowNotificationCapsule`（AOD 下根本没被调用）、
+     hook 全景判断（flow 放行但 AOD 仍无胶囊 View 节点）三条路都无效，勿重复尝试。
    - **关键：光发通知不够，必须过 filter**。SystemUI 的
      `OplusLiveAlertFilters.filterEntry()` AND 多个子 filter，插件的
      `onLiveNotificationPost` 只认白名单 app/服务，我们的通知拿 flag=0 会被
      降级成普通通知。手动往 extras 塞 `oplusLiveAlertOptions` 没用 ——
      `OplusLiveAlertNotificationsRepository.entryToLiveAlert()` 会覆盖它。
      `FluidCloudFilter` hook 总 filter，只把自家通知（pkg=com.android.systemui
-     && id=0x54494D45）的返回值改成 7（状态栏/锁屏/AOD 全 host），
-     其余通知原样放行；options 交给系统自己生成。
+     && id=0x54494D45）的返回值改成 7（允许流体云渲染），
+     其余通知原样放行；options 交给系统自己生成。flag 只管识别，不改变 AOD 渲染限制。
    - 曾误以为 Live Updates（promoted ongoing）就是流体云：实测那只是普通通知，
      真正差异全在上面这个 filter 上。渠道用 `live_alert`（与系统
      `LiveAlertChipModel` 一致），`setShortCriticalText` 是胶囊上的短文案
