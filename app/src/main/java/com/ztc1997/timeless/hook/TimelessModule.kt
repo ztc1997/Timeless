@@ -4,6 +4,7 @@ import android.os.Process
 import com.ztc1997.timeless.BuildConfig
 import com.ztc1997.timeless.core.ConfigSnapshot
 import com.ztc1997.timeless.core.GLog
+import com.ztc1997.timeless.core.MaskReason
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface.HotReloadedParam
@@ -30,6 +31,14 @@ class TimelessModule : XposedModule() {
     private var configSource: ConfigSource? = null
     private var hookBag: HookBag? = null
     private var hostClockHider: HostClockHider? = null
+
+    /**
+     * 只有 SystemUI 进程有发流体云（promoted ongoing）的权限。
+     * 实时读进程名：热重载不会重放 onModuleLoaded，实例字段会停在 false。
+     */
+    private val isSystemUiProcess: Boolean
+        get() = runCatching { Process.myProcessName() == "com.android.systemui" }
+            .getOrDefault(false)
 
     /** 进程级安装门闩：同一进程可能对多个 scope 包回调 onPackageReady，钩子只装一次。 */
     private val installGate = InstallGate()
@@ -73,6 +82,8 @@ class TimelessModule : XposedModule() {
         // 取消旧 generation 的 ticker；必须显式停掉，否则旧代码继续改视图。
         hostClockHider?.close()
         hostClockHider = null
+        // 流体云同理：钩子卸掉后不会再有回调来撤销它，先自己收掉。
+        FluidCloudNotifier.dismiss()
         return true
     }
 
@@ -131,7 +142,16 @@ class TimelessModule : XposedModule() {
             }
         }
 
-        val feature = ClockMaskFeature(xposed, classLoader, { configSource.snapshot }, bag, triggerPlugin)
+        // 流体云只由 SystemUI 进程发：那里有 promoted ongoing 所需的权限；
+        // launcher / colorfulengine 里同样的一次判定不需要（也不该）弹通知。
+        val fluidCloudSink: ((MaskReason?) -> Unit)? = if (isSystemUiProcess) {
+            { reason -> FluidCloudNotifier.onDecision(reason) { configSource.snapshot } }
+        } else {
+            null
+        }
+        val feature = ClockMaskFeature(
+            xposed, classLoader, { configSource.snapshot }, bag, triggerPlugin, fluidCloudSink,
+        )
 
         // 配置一变就更新日志等级与时钟判定；时钟判定每次回调都读最新快照，无需重装钩子。
         // 顺带：跟随系统被打开始、或设置页发来刷新请求时，立刻查一次系统作息。

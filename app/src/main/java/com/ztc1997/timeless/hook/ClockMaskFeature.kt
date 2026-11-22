@@ -6,6 +6,7 @@ import android.widget.TextView
 import com.ztc1997.timeless.core.ConfigSnapshot
 import com.ztc1997.timeless.core.FakeTime
 import com.ztc1997.timeless.core.GLog
+import com.ztc1997.timeless.core.MaskReason
 import io.github.libxposed.api.XposedInterface
 
 /**
@@ -30,6 +31,11 @@ class ClockMaskFeature(
     private val bag: HookBag,
     /** 任一时钟钩子首次回调时触发（用于懒安装需要宿主 Context 就绪的后续钩子）。 */
     private val onClockActive: (() -> Unit)? = null,
+    /**
+     * 每次判定后回调屏蔽原因（含 null），供 SystemUI 进程驱动流体云。
+     * 其它进程传 null：那里没有流体云权限，也不该发通知。
+     */
+    private val onMaskDecision: ((MaskReason?) -> Unit)? = null,
 ) {
 
     /** 安装所有命中候选类的钩子，返回成功挂上的钩子数。 */
@@ -191,6 +197,13 @@ class ClockMaskFeature(
 
     private fun hintFromClass(view: TextView): String = view.javaClass.simpleName
 
-    /** 当前是否应屏蔽。判定统一走 [MaskDecision]。 */
-    private fun shouldMask(): Boolean = MaskDecision.shouldMask(config)
+    /**
+     * 当前是否应屏蔽，同时把原因交给 [onMaskDecision]（若安装时提供）。
+     * 流体云与时钟共用一次判定，保证「通知说按时段启动」和「时钟真的被替换」一致。
+     */
+    private fun shouldMask(): Boolean {
+        val reason = MaskDecision.evaluate(config)
+        onMaskDecision?.invoke(reason)
+        return reason != null
+    }
 }

@@ -1,6 +1,7 @@
 package com.ztc1997.timeless.hook
 
 import com.ztc1997.timeless.core.ConfigSnapshot
+import com.ztc1997.timeless.core.MaskReason
 import com.ztc1997.timeless.core.SleepWindow
 
 /**
@@ -17,15 +18,21 @@ import com.ztc1997.timeless.core.SleepWindow
 object MaskDecision {
 
     /**
+     * 当前屏蔽原因；null 表示不屏蔽。流体云与所有时钟 feature 共用这一份判定，
+     * 保证「通知说按时段启动」和「时钟确实被替换」永远一致。
+     *
      * @param config 返回最新配置快照的 getter（每次回调都读，勿缓存）
      */
-    fun shouldMask(config: () -> ConfigSnapshot): Boolean {
+    fun evaluate(config: () -> ConfigSnapshot): MaskReason? {
         val cfg = config()
-        return SleepWindow.shouldMask(
+        return SleepWindow.decide(
             cfg,
             System.currentTimeMillis(),
             if (cfg.linkDnd) DndState.isActive() else false,
             SystemSleepSource.window(cfg.followSystem),
         )
     }
+
+    /** 当前是否应屏蔽。保留原签名，供各时钟 feature 使用。 */
+    fun shouldMask(config: () -> ConfigSnapshot): Boolean = evaluate(config) != null
 }

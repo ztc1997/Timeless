@@ -56,6 +56,7 @@ class ConfigSnapshotTest {
                     ConfigKeys.LOG_LEVEL to 3,
                     ConfigKeys.FOLLOW_SYSTEM to true,
                     ConfigKeys.SYSTEM_SLEEP_REQUEST to 42,
+                    ConfigKeys.TEMP_DISABLE_UNTIL_SEC to 1_900_000_000,
                 ),
             ),
         )
@@ -68,6 +69,7 @@ class ConfigSnapshotTest {
         assertEquals(3, snap.logLevel)
         assertTrue(snap.followSystem)
         assertEquals(42, snap.sleepRequest)
+        assertEquals(1_900_000_000, snap.tempDisableUntilSec)
     }
 
     @Test

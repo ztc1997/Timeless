@@ -26,26 +26,67 @@ object SleepWindow {
      * @param dndActive 当前勿扰/睡眠模式是否开启
      * @param systemWindow 系统自动学习的 (入睡, 起床)；仅 followSystem 生效
      */
+    /**
+     * 当前是否应屏蔽，以及**为什么**屏蔽。
+     *
+     * 流体云要在启动时说明原因，所以判定结果必须带原因；优先级与本函数一致：
+     * 手动强制 > 勿扰联动 > 时段。任何新增触发条件都要在这里登记原因，
+     * 不能只改 [shouldMask] 而让通知层猜。
+     */
+    fun decide(
+        config: ConfigSnapshot,
+        nowMillis: Long,
+        dndActive: Boolean,
+        systemWindow: Pair<String, String>? = null,
+    ): MaskReason? {
+        if (!config.enabled) return null
+        // 流体云上点了「临时禁用」：到点之前一律不屏蔽，且原因也无从谈起。
+        if (nowMillis / 1000 < config.tempDisableUntilSec) return null
+
+        when (config.manualOverride) {
+            ConfigKeys.OVERRIDE_OFF -> return null
+            ConfigKeys.OVERRIDE_ON -> return MaskReason.FORCED
+        }
+
+        if (config.linkDnd && dndActive) return MaskReason.DND
+
+        if (config.scheduleEnabled && isInEffectiveWindow(config, systemWindow, nowMillis)) {
+            return MaskReason.TIME
+        }
+
+        return null
+    }
+
     fun shouldMask(
         config: ConfigSnapshot,
         nowMillis: Long,
         dndActive: Boolean,
         systemWindow: Pair<String, String>? = null,
-    ): Boolean {
-        if (!config.enabled) return false
+    ): Boolean = decide(config, nowMillis, dndActive, systemWindow) != null
 
-        when (config.manualOverride) {
-            ConfigKeys.OVERRIDE_OFF -> return false
-            ConfigKeys.OVERRIDE_ON -> return true
+    /**
+     * 当前生效窗口的下一次结束时刻（本地时区），给「临时禁用」计算自动恢复时间。
+     *
+     * 只需要结束时刻本身：无论窗口是否跨午夜，下一次结束就是今天/明天的那个时刻。
+     * 解析失败返回 null，调用方退回固定时长。
+     */
+    fun nextWindowEndMillis(
+        config: ConfigSnapshot,
+        systemWindow: Pair<String, String>?,
+        nowMillis: Long,
+    ): Long? {
+        val endMin = parseHhMm(effectiveWindow(config, systemWindow).second) ?: return null
+        val cal = Calendar.getInstance().apply { timeInMillis = nowMillis }
+        val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+        cal.apply {
+            set(Calendar.HOUR_OF_DAY, endMin / 60)
+            set(Calendar.MINUTE, endMin % 60)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            // 同一分钟也算下一次（秒数已归零，此时刻不晚于 now）
+            add(Calendar.DATE, if (endMin > nowMin) 0 else 1)
         }
-
-        if (config.linkDnd && dndActive) return true
-
-        if (config.scheduleEnabled && isInEffectiveWindow(config, systemWindow, nowMillis)) {
-            return true
-        }
-
-        return false
+        return cal.timeInMillis
     }
 
     /** 当前生效的 (开始, 结束)：跟随系统且已取到系统值 → 用系统；否则用手动。 */

@@ -2,7 +2,9 @@ package com.ztc1997.timeless
 
 import com.ztc1997.timeless.core.ConfigKeys
 import com.ztc1997.timeless.core.ConfigSnapshot
+import com.ztc1997.timeless.core.MaskReason
 import com.ztc1997.timeless.core.SleepWindow
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -118,5 +120,67 @@ class SleepWindowTest {
         val system = "01:00" to "05:00"
         // 02:00 落在系统窗口里，但手动窗口是 12:00-13:00，且未跟随 → 不屏蔽
         assertFalse(SleepWindow.shouldMask(cfg, at(2, 0), dndActive = false, systemWindow = system))
+    }
+
+    @Test
+    fun `判定原因按强制 勿扰 时段的优先级返回`() {
+        val cfg = ConfigSnapshot(
+            scheduleEnabled = true,
+            linkDnd = true,
+            windowStart = "23:00", windowEnd = "07:00",
+        )
+        assertEquals(
+            MaskReason.FORCED,
+            SleepWindow.decide(
+                cfg.copy(manualOverride = ConfigKeys.OVERRIDE_ON),
+                at(2, 0), dndActive = true,
+            ),
+        )
+        assertEquals(MaskReason.DND, SleepWindow.decide(cfg, at(12, 0), dndActive = true))
+        assertEquals(MaskReason.TIME, SleepWindow.decide(cfg, at(2, 0), dndActive = false))
+        assertEquals(null, SleepWindow.decide(cfg, at(12, 0), dndActive = false))
+    }
+
+    @Test
+    fun `临时禁用期间不屏蔽 到期后自动恢复`() {
+        val now = at(2, 0)
+        val cfg = ConfigSnapshot(
+            scheduleEnabled = true,
+            windowStart = "23:00", windowEnd = "07:00",
+            tempDisableUntilSec = (now / 1000).toInt() + 60,
+        )
+        assertEquals(null, SleepWindow.decide(cfg, now, dndActive = false))
+        // 一分钟后到期，原时段判定继续生效
+        assertEquals(
+            MaskReason.TIME,
+            SleepWindow.decide(cfg, now + 60_000, dndActive = false),
+        )
+    }
+
+    @Test
+    fun `临时禁用优先于强制和勿扰`() {
+        val now = at(2, 0)
+        val cfg = ConfigSnapshot(
+            manualOverride = ConfigKeys.OVERRIDE_ON,
+            linkDnd = true,
+            tempDisableUntilSec = (now / 1000).toInt() + 60,
+        )
+        assertEquals(null, SleepWindow.decide(cfg, now, dndActive = true))
+    }
+
+    @Test
+    fun `下一次窗口结束时刻取今天或明天`() {
+        val cfg = ConfigSnapshot(windowStart = "23:00", windowEnd = "07:00")
+        val todayEnd = SleepWindow.nextWindowEndMillis(cfg, null, at(2, 0))!!
+        assertEquals(at(7, 0), todayEnd)
+
+        val tomorrowEnd = SleepWindow.nextWindowEndMillis(cfg, null, at(12, 0))!!
+        assertEquals(at(7, 0) + 24 * 60 * 60 * 1000, tomorrowEnd)
+
+        val system = "01:00" to "05:00"
+        assertEquals(
+            at(5, 0),
+            SleepWindow.nextWindowEndMillis(cfg.copy(followSystem = true), system, at(2, 0))!!,
+        )
     }
 }

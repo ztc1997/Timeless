@@ -16,6 +16,13 @@ object ConfigKeys {
     const val MANUAL_OVERRIDE = "manual_override"
     const val LOG_LEVEL = "log_level"
 
+    /**
+     * 流体云「临时禁用」的到期时刻（Unix 秒）。9999…0 表示没有临时禁用。
+     * 用 Int 秒而不是 Long 毫秒：remote preferences 的两侧写入通道都支持 Int，
+     * 到 2038 年才溢出，足够用。
+     */
+    const val TEMP_DISABLE_UNTIL_SEC = "temp_disable_until_sec"
+
     /** 跟随系统自动学习的作息（开启后上方两个时间只作为只读展示）。 */
     const val FOLLOW_SYSTEM = "follow_system"
 
@@ -46,6 +53,6 @@ object ConfigKeys {
 
     val ALL_KEYS = setOf(
         ENABLED, SCHEDULE_ENABLED, WINDOW_START, WINDOW_END,
-        LINK_DND, MANUAL_OVERRIDE, LOG_LEVEL, FOLLOW_SYSTEM,
+        LINK_DND, MANUAL_OVERRIDE, LOG_LEVEL, FOLLOW_SYSTEM, TEMP_DISABLE_UNTIL_SEC,
     )
 }

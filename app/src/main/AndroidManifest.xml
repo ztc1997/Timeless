@@ -30,6 +30,19 @@
             </intent-filter>
         </activity>
 
+        <!--
+          流体云「临时禁用」按钮的 PendingIntent 落点。由 SystemUI 进程发出，
+          必须 exported；动作名与额外字段见 core/FluidCloudContract。
+          这里只写配置，不发通知，因此不需要任何通知相关权限。
+        -->
+        <receiver
+            android:name=".appconfig.TempDisableReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.ztc1997.timeless.TEMP_DISABLE" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

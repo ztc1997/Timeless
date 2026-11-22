@@ -24,6 +24,11 @@ data class ConfigSnapshot(
      * 放进快照是为了让 hook 侧的配置变更回调能顺带收到它 —— 快照变了才会回调。
      */
     val sleepRequest: Int = 0,
+    /**
+     * 流体云「临时禁用」到期时刻（Unix 秒）；当前时间小于它时一律不屏蔽。
+     * 到点后无需写回配置，判定自然恢复原有规则。
+     */
+    val tempDisableUntilSec: Int = 0,
 ) {
     companion object {
         val DEFAULT = ConfigSnapshot()
@@ -49,6 +54,7 @@ data class ConfigSnapshot(
             logLevel = p.getInt(ConfigKeys.LOG_LEVEL, ConfigKeys.DEFAULT_LOG_LEVEL),
             followSystem = p.getBoolean(ConfigKeys.FOLLOW_SYSTEM, ConfigKeys.DEFAULT_FOLLOW_SYSTEM),
             sleepRequest = p.getInt(ConfigKeys.SYSTEM_SLEEP_REQUEST, 0),
+            tempDisableUntilSec = p.getInt(ConfigKeys.TEMP_DISABLE_UNTIL_SEC, 0),
         )
     }
 }
