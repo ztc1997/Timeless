@@ -299,13 +299,17 @@ class TimelessModule : XposedModule() {
     }
 
     /**
-     * 注册「临时禁用」本地接收器（各 hook 进程都要装，判定才能跨进程一致）。
-     * install 内部幂等，多处调用安全。SystemUI 进程额外挂回调：收到广播立即
-     * 撤掉流体云，不必等下一次时钟绘制。
+     * 注册「临时禁用 / 恢复屏蔽」本地接收器（各 hook 进程都要装，判定才能跨进程一致）。
+     * install 内部幂等，多处调用安全。SystemUI 进程额外挂回调：收到广播后立即
+     * 刷新流体云通知（切换成暂停态或恢复屏蔽态），不必等下一次时钟绘制。
      */
     private fun registerTempDisableLocal(ctx: Context) {
         val onReceived: ((Int) -> Unit)? = if (isSystemUiProcess) {
-            { _ -> FluidCloudNotifier.cancelNow() }
+            { _ ->
+                // 广播到达时配置通道早已就绪（receiver 要等宿主 Context 才有），
+                // 极端情况下拿不到就跳过——那一刻通知本也不存在。
+                configSource?.let { cs -> FluidCloudNotifier.refreshNow { cs.snapshot } }
+            }
         } else {
             null
         }

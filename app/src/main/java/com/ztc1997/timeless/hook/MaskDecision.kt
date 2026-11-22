@@ -26,7 +26,26 @@ object MaskDecision {
     fun evaluate(config: () -> ConfigSnapshot): MaskReason? {
         // 叠加本进程的「临时禁用」状态：按钮广播在各 hook 进程内闭环写入，
         // 不经过会被冻结的模块 App。进程不落盘，宿主重启后自然失效。
-        val cfg = TempDisableLocal.merge(config())
+        return decide(config(), applyTempDisable = true)
+    }
+
+    /**
+     * 不含「临时禁用」的原始屏蔽原因。
+     *
+     * 流体云用它区分两种 reason=null：临时禁用导致的暂停（底层仍在屏蔽窗口，
+     * 通知要保留并显示有效期）vs 真正解除屏蔽（通知该撤销）。时钟判定仍走
+     * [evaluate]，临时禁用时照样显示真实时间。
+     */
+    fun evaluateRaw(config: () -> ConfigSnapshot): MaskReason? =
+        decide(config(), applyTempDisable = false)
+
+    private fun decide(snapshot: ConfigSnapshot, applyTempDisable: Boolean): MaskReason? {
+        // 临时禁用只影响时钟判定；流体云读原始原因时要把它从快照里剥掉。
+        val cfg = if (applyTempDisable) {
+            TempDisableLocal.merge(snapshot)
+        } else {
+            snapshot.copy(tempDisableUntilSec = 0)
+        }
         return SleepWindow.decide(
             cfg,
             System.currentTimeMillis(),

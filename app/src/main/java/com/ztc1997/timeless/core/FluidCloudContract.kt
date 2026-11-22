@@ -16,6 +16,12 @@ object FluidCloudContract {
      */
     const val ACTION_TEMP_DISABLE_LOCAL = "com.ztc1997.timeless.TEMP_DISABLE_LOCAL"
 
+    /**
+     * 「恢复屏蔽」按钮动作：清掉各 hook 进程内存里的临时禁用，立刻回到屏蔽态。
+     * 与临时禁用一样走 SystemUI 进程内闭环，不经过会被冻结的模块 App。
+     */
+    const val ACTION_RESTORE_LOCAL = "com.ztc1997.timeless.RESTORE_LOCAL"
+
     /** 临时禁用到期时刻（Unix 秒）的 Intent extra。 */
     const val EXTRA_UNTIL_SEC = "timeless_temp_disable_until_sec"
 

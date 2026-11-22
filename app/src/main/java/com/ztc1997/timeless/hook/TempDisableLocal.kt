@@ -29,6 +29,9 @@ object TempDisableLocal {
     private var receiver: BroadcastReceiver? = null
     private var onReceived: ((Int) -> Unit)? = null
 
+    /** 当前本进程生效的临时禁用到期时刻（Unix 秒）；0 表示未禁用。供通知显示有效期。 */
+    fun currentUntilSec(): Int = untilSec
+
     /** 把本进程临时禁用叠加到配置快照（取更晚的到期时刻）。 */
     fun merge(config: ConfigSnapshot): ConfigSnapshot =
         if (untilSec > config.tempDisableUntilSec) {
@@ -39,30 +42,39 @@ object TempDisableLocal {
 
     /**
      * 注册接收器；可重复调用（幂等）。[onReceived] 只在 SystemUI 进程需要 ——
-     * 收到广播后主动撤掉流体云通知，不必等下一次时钟绘制回调。
+     * 收到临时禁用/恢复屏蔽广播后主动刷新流体云通知，不必等下一次时钟绘制回调。
+     * 回调参数是新的到期时刻（0 表示刚恢复屏蔽）。
      */
     fun install(ctx: Context, onReceived: ((Int) -> Unit)? = null) {
         if (receiver != null) return
         this.onReceived = onReceived
         val r = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                if (intent.action != FluidCloudContract.ACTION_TEMP_DISABLE_LOCAL) return
-                val until = intent.getIntExtra(FluidCloudContract.EXTRA_UNTIL_SEC, 0)
-                val reason = intent.getStringExtra(FluidCloudContract.EXTRA_REASON).orEmpty()
-                untilSec = until.coerceAtLeast(0)
-                GLog.i("流体云临时禁用（本地闭环）：reason=$reason until=$untilSec")
+                when (intent.action) {
+                    FluidCloudContract.ACTION_TEMP_DISABLE_LOCAL -> {
+                        val until = intent.getIntExtra(FluidCloudContract.EXTRA_UNTIL_SEC, 0)
+                        val reason = intent.getStringExtra(FluidCloudContract.EXTRA_REASON).orEmpty()
+                        untilSec = until.coerceAtLeast(0)
+                        GLog.i("流体云临时禁用（本地闭环）：reason=$reason until=$untilSec")
+                    }
+                    FluidCloudContract.ACTION_RESTORE_LOCAL -> {
+                        untilSec = 0
+                        GLog.i("流体云恢复屏蔽（本地闭环）：清除临时禁用")
+                    }
+                    else -> return
+                }
                 onReceived?.invoke(untilSec)
             }
         }
         runCatching {
             // 广播由 SystemUI 进程发出，跨 uid，必须 EXPORTED；targetSdk 37 也要求显式声明。
-            ctx.registerReceiver(
-                r,
-                IntentFilter(FluidCloudContract.ACTION_TEMP_DISABLE_LOCAL),
-                Context.RECEIVER_EXPORTED,
-            )
+            val filter = IntentFilter().apply {
+                addAction(FluidCloudContract.ACTION_TEMP_DISABLE_LOCAL)
+                addAction(FluidCloudContract.ACTION_RESTORE_LOCAL)
+            }
+            ctx.registerReceiver(r, filter, Context.RECEIVER_EXPORTED)
             receiver = r
-            GLog.i("本地临时禁用接收器已注册")
+            GLog.i("本地临时禁用/恢复接收器已注册")
         }.onFailure { GLog.w("注册本地临时禁用接收器失败", it) }
     }
 

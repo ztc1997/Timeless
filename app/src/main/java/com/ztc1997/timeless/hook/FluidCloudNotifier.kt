@@ -8,11 +8,16 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import com.ztc1997.timeless.core.ConfigSnapshot
 import com.ztc1997.timeless.core.FluidCloudContract
 import com.ztc1997.timeless.core.GLog
 import com.ztc1997.timeless.core.MaskReason
 import com.ztc1997.timeless.core.SleepWindow
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 流体云提醒：只在 SystemUI 进程安装使用。
@@ -25,13 +30,19 @@ import com.ztc1997.timeless.core.SleepWindow
  * 我们就会降级成普通通知。FluidCloudFilter 负责把自家通知的 flag 改成 7，
  * 剩下的 options 由系统 entryToLiveAlert 自己生成（手动塞 extra 会被覆盖）。
  *
- * 状态机刻意只认「屏蔽原因变化」：
- * - null → 有原因：发帖
- * - 有原因 → 另一个原因：更新同一条通知（期间原因不会变，但覆盖配置变更的边界）
- * - 有原因 → null：撤销（解除屏蔽 / 临时禁用生效）
+ * 通知有三态，靠「不含临时禁用的原始原因」+ 本地临时禁用状态区分：
+ * - 原始原因非空 + 未临时禁用 → 屏蔽中：「无时已启动·原因」+【临时禁用】
+ * - 原始原因非空 + 临时禁用中 → 暂停中：保留通知，显示「临时禁用至 HH:mm」+【恢复屏蔽】
+ * - 原始原因为 null → 真解除：撤销
+ * 时钟判定仍把临时禁用算进去（临时禁用时显示真实时间），只有流体云把它区分开。
  * 多次回调幂等，避免状态栏每秒刷新都重发通知。
  */
 object FluidCloudNotifier {
+
+    /** 通知 UI 状态；用于去重，避免同一状态每秒重发。 */
+    private data class UiState(val mode: Mode, val reason: MaskReason?, val untilSec: Int) {
+        enum class Mode { ACTIVE, PAUSED, GONE }
+    }
 
     internal const val NOTIFICATION_ID = 0x54494D45 // TIM E，固定 ID 便于覆盖/撤销
     // 不用系统流体云的 live_alert 渠道：那条渠道是 HIGH + 系统默认提示音，
@@ -43,64 +54,95 @@ object FluidCloudNotifier {
 
     private val lock = Any()
     private var active = false
-    private var lastReason: MaskReason? = null
+    private var lastState: UiState? = null
+
+    /**
+     * 临时禁用到期兜底：熄屏/AOD 期间没有时钟绘制，光靠 onDecision 回调无法在
+     * 到期那一刻把 PAUSED 通知切回 ACTIVE。进入暂停态时挂一个到点任务，到点后
+     * 用上次记住的 reason 直接把通知切回屏蔽态（此时时钟判定也随 untilSec 过期
+     * 而恢复屏蔽，二者一致）。热重载/状态切换时统一取消。
+     *
+     * Handler 不在 HookHandle 管理范围内，热重载必须显式清理（见 dismiss）。
+     */
+    private val expireHandler = Handler(Looper.getMainLooper())
+    private val expireRunnable = Runnable {
+        synchronized(lock) {
+            val paused = lastState
+            if (paused == null || paused.mode != UiState.Mode.PAUSED) return@Runnable
+            val ctx = DndState.currentAppContext()
+            if (ctx == null) return@Runnable
+            val activeState = UiState(UiState.Mode.ACTIVE, paused.reason, 0)
+            post(ctx, activeState, ConfigSnapshot.DEFAULT)
+            active = true
+            lastState = activeState
+            GLog.i("流体云临时禁用到期，兜底切回屏蔽态")
+        }
+    }
 
     /**
      * 由时钟回调驱动：每次判定完是否屏蔽都喂进来（SystemUI 进程外不要调用）。
-     * [config] 必须是只读当前快照的 getter，用来算临时禁用的到期时刻。
+     *
+     * 这里不看传入的 reason（那是叠加临时禁用后的结果，无法区分「暂停」与「解除」），
+     * 而是自己读原始原因 + 本地临时禁用状态算出三态。[config] 是只读快照 getter。
      */
     fun onDecision(reason: MaskReason?, config: () -> ConfigSnapshot) {
+        val rawReason = MaskDecision.evaluateRaw(config)
+        val cfg = config()
+        val untilSec = TempDisableLocal.currentUntilSec()
+        val nowSec = System.currentTimeMillis() / 1000
+        val paused = rawReason != null && untilSec > nowSec
+        val target = when {
+            rawReason == null -> UiState(UiState.Mode.GONE, null, 0)
+            paused -> UiState(UiState.Mode.PAUSED, rawReason, untilSec)
+            else -> UiState(UiState.Mode.ACTIVE, rawReason, 0)
+        }
         synchronized(lock) {
-            if (reason == null) {
-                if (active) {
-                    GLog.i("流体云撤销：reason 变 null（临时禁用/解除屏蔽）")
-                    DndState.currentAppContext()?.let(::cancel)
-                    active = false
-                    lastReason = null
-                }
-                return
-            }
-            if (active && reason == lastReason) return
-
-            val ctx = DndState.currentAppContext()
-            if (ctx == null) {
-                GLog.w("流体云未发出：SystemUI Context 尚未就绪")
-                return
-            }
-            post(ctx, reason, config())
-            active = true
-            lastReason = reason
+            if (target == lastState) return
+            apply(target, cfg)
         }
     }
 
-    /** 热重载 / 卸载钩子时撤销，避免旧 generation 的通知留在状态栏。 */
+    /** 由 TempDisableLocal 的本地广播回调触发：立即刷新通知，不等时钟绘制。 */
+    fun refreshNow(config: () -> ConfigSnapshot) = onDecision(null, config)
+
+    private fun apply(target: UiState, cfg: ConfigSnapshot) {
+        // 离开暂停态就撤掉到期兜底任务；进入暂停态则在下方重新挂。
+        expireHandler.removeCallbacks(expireRunnable)
+        if (target.mode == UiState.Mode.GONE) {
+            if (active) {
+                GLog.i("流体云撤销：原始原因为 null（真解除屏蔽）")
+                DndState.currentAppContext()?.let(::cancel)
+                active = false
+            }
+            lastState = target
+            return
+        }
+        val ctx = DndState.currentAppContext()
+        if (ctx == null) {
+            GLog.w("流体云未发出：SystemUI Context 尚未就绪")
+            return
+        }
+        post(ctx, target, cfg)
+        active = true
+        lastState = target
+        if (target.mode == UiState.Mode.PAUSED) {
+            val delayMs = (target.untilSec.toLong() - System.currentTimeMillis() / 1000) * 1000L
+            expireHandler.postDelayed(expireRunnable, delayMs.coerceAtLeast(0))
+        }
+    }
+
+    /** 热重载 / 卸载钩子时撤销，避免旧 generation 的通知与到期任务残留。 */
     fun dismiss() {
         synchronized(lock) {
+            expireHandler.removeCallbacksAndMessages(null)
             if (!active) return
             DndState.currentAppContext()?.let(::cancel)
             active = false
-            lastReason = null
+            lastState = null
         }
     }
 
-    /**
-     * 按钮「临时禁用」点击后立即撤掉通知。
-     *
-     * 不检查 [active]：那是个跟随时钟刷新回调的状态位，屏幕停在 AOD / 时钟未
-     * 绘制时可能与通知实际存在与否脱节（实测 active=false 但通知仍在）。
-     * 按通知 ID 无条件 cancel 是幂等的，多撤一次没有副作用。
-     */
-    fun cancelNow() {
-        val ctx = DndState.currentAppContext() ?: return
-        cancel(ctx)
-        synchronized(lock) {
-            active = false
-            lastReason = null
-        }
-        GLog.i("流体云已按临时禁用撤销（无条件 cancel）")
-    }
-
-    private fun post(ctx: Context, reason: MaskReason, cfg: ConfigSnapshot) {
+    private fun post(ctx: Context, state: UiState, cfg: ConfigSnapshot) {
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         if (nm == null) {
             GLog.w("流体云未发出：拿不到 NotificationManager")
@@ -108,22 +150,41 @@ object FluidCloudNotifier {
         }
         ensureChannel(nm)
 
-        val title = "无时已启动"
-        val detail = "启动原因：${reason.label()}"
+        val reason = state.reason ?: return
+        val paused = state.mode == UiState.Mode.PAUSED
+        val title: String
+        val detail: String
         // chip 最多显示 7 个字符，超长会被截断成只剩图标
-        val short = "无时·${reason.shortLabel()}"
-
-        val untilSec = tempDisableUntilSec(reason, cfg)
+        val short: String
+        val actionLabel: String
+        val actionIntent: Intent
+        if (paused) {
+            // 临时禁用中：保留流体云，告知有效期，点按钮立即恢复屏蔽。
+            val untilText = formatUntil(state.untilSec)
+            title = "无时已临时禁用"
+            detail = "已暂停提醒，至 $untilText 自动恢复 · 点此立即恢复屏蔽"
+            short = "无时·已停"
+            actionLabel = "恢复屏蔽"
+            actionIntent = Intent(FluidCloudContract.ACTION_RESTORE_LOCAL)
+        } else {
+            // 屏蔽中：说明原因，给临时禁用按钮。
+            title = "无时已启动"
+            detail = "启动原因：${reason.label()}"
+            short = "无时·${reason.shortLabel()}"
+            actionLabel = "临时禁用"
+            val untilSec = tempDisableUntilSec(reason, cfg)
+            actionIntent = Intent(FluidCloudContract.ACTION_TEMP_DISABLE_LOCAL)
+                .putExtra(FluidCloudContract.EXTRA_UNTIL_SEC, untilSec)
+                .putExtra(FluidCloudContract.EXTRA_REASON, reason.name)
+        }
         // 按钮广播在系统进程内闭环：SystemUI 发出、各 hook 进程的 TempDisableLocal
         // 动态 receiver 接收，不经过会被冻结的模块 App。IMMUTABLE + UPDATE_CURRENT
-        // 保证覆盖旧 Intent 的到期时刻。
-        val intent = Intent(FluidCloudContract.ACTION_TEMP_DISABLE_LOCAL)
-            .putExtra(FluidCloudContract.EXTRA_UNTIL_SEC, untilSec)
-            .putExtra(FluidCloudContract.EXTRA_REASON, reason.name)
+        // 保证覆盖旧 Intent 的到期时刻。用 action 名做 requestCode，避免
+        // 「临时禁用」与「恢复屏蔽」两个 PendingIntent 互相覆盖。
         val actionPending = PendingIntent.getBroadcast(
             ctx,
-            0,
-            intent,
+            actionIntent.action.hashCode(),
+            actionIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
@@ -144,14 +205,22 @@ object FluidCloudNotifier {
             .setCategory(Notification.CATEGORY_STATUS)
             .setRequestPromotedOngoing(true)
             .addAction(
-                Notification.Action.Builder(null, "临时禁用", actionPending).build(),
+                Notification.Action.Builder(null, actionLabel, actionPending).build(),
             )
             .build()
 
         runCatching { nm.notify(NOTIFICATION_ID, notification) }
-            .onSuccess { GLog.i("流体云已发出：reason=${reason.name} tempDisableUntil=$untilSec") }
+            .onSuccess {
+                GLog.i("流体云已发出：mode=${state.mode} reason=${reason.name} until=${state.untilSec}")
+            }
             .onFailure { GLog.w("流体云发出失败", it) }
     }
+
+    /** 把 Unix 秒格式化成本地 HH:mm，给「临时禁用至」文案用。 */
+    private fun formatUntil(untilSec: Int): String =
+        runCatching {
+            SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(untilSec * 1000L))
+        }.getOrDefault("稍后")
 
     private fun cancel(ctx: Context) {
         runCatching {
