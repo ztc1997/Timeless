@@ -162,7 +162,7 @@ object FluidCloudNotifier {
             // 临时禁用中：保留流体云，告知有效期，点按钮立即恢复屏蔽。
             val untilText = formatUntil(state.untilSec)
             title = "无时已临时禁用"
-            detail = "已暂停提醒，至 $untilText 自动恢复 · 点此立即恢复屏蔽"
+            detail = "已暂停屏蔽，至 $untilText 自动恢复 · 点此立即恢复屏蔽"
             short = "无时·已停"
             actionLabel = "恢复屏蔽"
             actionIntent = Intent(FluidCloudContract.ACTION_RESTORE_LOCAL)
